@@ -79,6 +79,21 @@ class Mesh {
             shaderDefines += '#define USE_TEX_LOD 1\n';
         }
 
+        switch(globalState.lightingModel) {
+            case "BlinnPhong":
+                shaderDefines += '#define LIGHTING_BLINN_PHONG 1\n';
+                break;
+            case "Lambert":
+                shaderDefines += '#define LIGHTING_LAMBERT 1\n';
+                break;
+            case "Unlit":
+                shaderDefines += '#define LIGHTING_UNLIT 1\n';
+                break;
+            default:
+                shaderDefines += '#define LIGHTING_PBR_MR 1\n';
+                break;
+        }
+
         var vertexShader = gl.createShader(gl.VERTEX_SHADER);
         gl.shaderSource(vertexShader, shaderDefines + this.vertSource);
         gl.compileShader(vertexShader);
