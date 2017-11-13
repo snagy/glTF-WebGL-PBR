@@ -152,7 +152,8 @@ function init(vertSource, fragSource) {
         scene: null,
         hasLODExtension:gl.getExtension('EXT_shader_texture_lod'),
         hasDerivativesExtension:gl.getExtension('OES_standard_derivatives'),
-        sRGBifAvailable: (hasSRGBExt ? hasSRGBExt.SRGB_EXT : gl.RGBA)
+        sRGBifAvailable: (hasSRGBExt ? hasSRGBExt.SRGB_EXT : gl.RGBA),
+        lightingModel: 'glTF PBR'
     };
 
     var projectionMatrix = mat4.create();
@@ -180,6 +181,7 @@ function init(vertSource, fragSource) {
     // Light
     glState.uniforms['u_LightDirection'] = { 'funcName': 'uniform3f', 'vals': [0.0, 0.5, 0.5] };
     glState.uniforms['u_LightColor'] = { 'funcName': 'uniform3f', 'vals': [1.0, 1.0, 1.0] };
+    glState.uniforms['u_AmbientLightColor'] = { 'funcName': 'uniform3f', 'vals':[0.0,0.0,0.0] };
 
     // Camera
     glState.uniforms['u_Camera'] = { 'funcName': 'uniform3f', vals: [0.0, 0.0, -4.0] };
@@ -232,7 +234,7 @@ function init(vertSource, fragSource) {
 
     // Initialize GUI
     var gui = new dat.GUI();
-    var folder = gui.addFolder("Metallic-Roughness Material");
+    var folder = gui.addFolder("Scene Setup");
 
 
     var text = { Model: defaultModelName };
@@ -241,8 +243,10 @@ function init(vertSource, fragSource) {
     });
     folder.open();
 
-    var light = gui.addFolder("Directional Light");
-    var lightProps = { lightColor: [255, 255, 255], lightScale: 1.0, lightRotation: 75, lightPitch: 40 };
+
+    var light = gui.addFolder("Lighting");
+
+    var lightProps = { lightColor: [255, 255, 255], lightScale: 1.0, lightRotation: 75, lightPitch: 40, ambientColor: [255,255,255], ambientScale: 0.0, IBLScale: 1.0};
 
     var updateLight = function(value) {
         glState.uniforms['u_LightColor'].vals = [lightProps.lightScale * lightProps.lightColor[0] / 255,
@@ -255,6 +259,10 @@ function init(vertSource, fragSource) {
         Math.sin(pitch),
         Math.cos(rot) * Math.cos(pitch)];
 
+        glState.uniforms['u_AmbientLightColor'].vals = [lightProps.ambientScale * lightProps.ambientColor[0] / 255,
+        lightProps.ambientScale * lightProps.ambientColor[1] / 255,
+        lightProps.ambientScale * lightProps.ambientColor[2] / 255];
+
         redraw();
     };
 
@@ -263,28 +271,38 @@ function init(vertSource, fragSource) {
     light.add(lightProps, "lightRotation", 0, 360).onChange(updateLight);
     light.add(lightProps, "lightPitch", -90, 90).onChange(updateLight);
 
+    light.addColor(lightProps, "ambientColor").onChange(updateLight);
+    light.add(lightProps, "ambientScale", 0, 1).onChange(updateLight);
     light.open();
-
 
     updateLight();
 
     //mouseover scaling
-
-    var scaleVals = {
-        IBL: 1.0,
-    };
+    var scaleVals = {};
     var updateMathScales = function(v) {
         var el = scaleVals.pinnedElement ? scaleVals.pinnedElement : scaleVals.activeElement;
         var elId = el ? el.attr('id') : null;
 
         glState.uniforms['u_ScaleDiffBaseMR'].vals = [elId == "mathDiff" ? 1.0 : 0.0, elId == "baseColor" ? 1.0 : 0.0, elId == "metallic" ? 1.0 : 0.0, elId == "roughness" ? 1.0 : 0.0];
         glState.uniforms['u_ScaleFGDSpec'].vals = [elId == "mathF" ? 1.0 : 0.0, elId == "mathG" ? 1.0 : 0.0, elId == "mathD" ? 1.0 : 0.0, elId == "mathSpec" ? 1.0 : 0.0];
-        glState.uniforms['u_ScaleIBLAmbient'].vals = [scaleVals.IBL, scaleVals.IBL, 0.0, 0.0];
+        glState.uniforms['u_ScaleIBLAmbient'].vals = [lightProps.IBLScale, lightProps.IBLScale, 0.0, 0.0];
 
         redraw();
     };
 
-    gui.add(scaleVals, "IBL", 0, 4).onChange(updateMathScales);
+    gui.add(lightProps, "IBLScale", 0, 4).onChange(updateMathScales);
+
+    folder.add({lightingTechnique: glState.lightingModel}, 'lightingTechnique', ['glTF PBR', 'BlinnPhong', 'Lambert', 'Unlit']).onChange(function(value) {
+        glState.lightingModel = value;
+
+        // Iterate over all controllers
+        for (var i in gui.__controllers) {
+          gui.__controllers[i].updateDisplay();
+        }
+        updateMathScales();
+        updateLight();
+        updateModel(text.Model, gl, glState, viewMatrix, projectionMatrix, canvas, ctx2d);
+    });
 
     var setActiveComponent = function(el) {
         if (scaleVals.activeElement) {
@@ -368,6 +386,7 @@ function init(vertSource, fragSource) {
         var str = p.toString();
         return ' '.repeat(3).substring(str.length) + str;
     }
+
 
     // picker
     var pixelPickerText = document.getElementById('pixelPickerText');

@@ -19,6 +19,8 @@ precision highp float;
 uniform vec3 u_LightDirection;
 uniform vec3 u_LightColor;
 
+uniform vec3 u_AmbientLightColor;
+
 #ifdef USE_IBL
 uniform samplerCube u_DiffuseEnvSampler;
 uniform samplerCube u_SpecularEnvSampler;
@@ -186,7 +188,7 @@ float geometricOcclusion(PBRInfo pbrInputs)
 float microfacetDistribution(PBRInfo pbrInputs)
 {
     float roughnessSq = pbrInputs.alphaRoughness * pbrInputs.alphaRoughness;
-    float f = (pbrInputs.NdotH * roughnessSq - pbrInputs.NdotH) * pbrInputs.NdotH + 1.0;
+    float f = pbrInputs.NdotH*pbrInputs.NdotH*(roughnessSq - 1.0) + 1.0;
     return roughnessSq / (M_PI * f * f);
 }
 
@@ -263,15 +265,40 @@ void main()
     float G = geometricOcclusion(pbrInputs);
     float D = microfacetDistribution(pbrInputs);
 
+    vec3 diffuseContrib = vec3(0.0);
+    vec3 specContrib = vec3(0.0);
+    vec3 color = vec3(0.0);
+
+#ifdef LIGHTING_BLINN_PHONG
+    // simplified blinn-phong lighting model
+    diffuseContrib = vec3(NdotL);
+    float specPow = (1.0-perceptualRoughness) * 128.0 + 1.0;
+    specContrib = vec3(pow(NdotH,specPow));
+    color = baseColor.rgb * u_LightColor * (diffuseContrib + specContrib);
+#endif
+
+#ifdef LIGHTING_LAMBERT
+    diffuseContrib = vec3(NdotL);
+    color = baseColor.rgb * u_LightColor * (diffuseContrib);
+#endif
+
+#ifdef LIGHTING_UNLIT
+    // nothing
+#endif
+
+#ifdef  LIGHTING_PBR_MR
     // Calculation of analytical lighting contribution
-    vec3 diffuseContrib = (1.0 - F) * diffuse(pbrInputs);
-    vec3 specContrib = F * G * D / (4.0 * NdotL * NdotV);
-    vec3 color = NdotL * u_LightColor * (diffuseContrib + specContrib);
+    diffuseContrib = (1.0 - F) * diffuse(pbrInputs);
+    specContrib = F * G * D / (4.0 * NdotL * NdotV);
+    color = NdotL * u_LightColor * (diffuseContrib + specContrib);
+#endif
 
     // Calculate lighting contribution from image based lighting source (IBL)
 #ifdef USE_IBL
     color += getIBLContribution(pbrInputs, n, reflection);
 #endif
+
+    color += baseColor.rgb * u_AmbientLightColor;
 
     // Apply optional PBR terms for additional (optional) shading
 #ifdef HAS_OCCLUSIONMAP
@@ -286,9 +313,11 @@ void main()
 
     // This section uses mix to override final color for reference app visualization
     // of various parameters in the lighting equation.
+#ifdef LIGHTING_PBR_MR
     color = mix(color, F, u_ScaleFGDSpec.x);
     color = mix(color, vec3(G), u_ScaleFGDSpec.y);
     color = mix(color, vec3(D), u_ScaleFGDSpec.z);
+#endif
     color = mix(color, specContrib, u_ScaleFGDSpec.w);
 
     color = mix(color, diffuseContrib, u_ScaleDiffBaseMR.x);
