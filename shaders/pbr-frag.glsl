@@ -272,8 +272,10 @@ void main()
 #ifdef LIGHTING_BLINN_PHONG
     // simplified blinn-phong lighting model
     diffuseContrib = vec3(NdotL);
-    float specPow = (1.0-perceptualRoughness) * 128.0 + 1.0;
+    float specPow = 2.0/alphaRoughness-1.0;
     specContrib = vec3(pow(NdotH,specPow));
+    // normalizing term
+    specContrib = specContrib / (M_PI*alphaRoughness);
     color = baseColor.rgb * u_LightColor * (diffuseContrib + specContrib);
 #endif
 
